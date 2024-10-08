@@ -11,15 +11,20 @@ import shutil
 import base64
 import threading
 import time
-import importlib
-from filelock import FileLock
 from astropy.config import create_config_file
+import os
+from filelock import FileLock
 
 # import data for config.py
-from dwarf_python_api.get_config_data import get_config_data, CONFIG_FILE
+from dwarf_python_api.lib.dwarf_utils import motor_action, perform_time, perform_timezone, perform_open_camera, read_camera_exposure, read_camera_gain, read_camera_IR, perform_update_camera_setting, perform_takePhoto, save_bluetooth_config_from_ini_file, perform_start_autofocus, perform_stop_autofocus, perform_disconnect
+from dwarf_python_api.lib.ftp_utils import update_client_id_from_last_session
+from dwarf_python_api.get_config_data import get_config_data, update_config_data, CONFIG_FILE
 from dwarf_python_api.get_live_data_dwarf import getGetLastPhoto, read_config
-from dwarf_python_api.lib.dwarf_utils import motor_action, perform_time, perform_timezone, perform_open_camera, read_camera_exposure, read_camera_gain, read_camera_IR, permform_update_camera_setting, perform_takePhoto, save_bluetooth_config_from_ini_file, perform_start_autofocus, perform_stop_autofocus
 from dwarf_ble_connect.connect_bluetooth import connect_bluetooth
+
+from dwarf_python_api.lib.dwarf_utils import read_bluetooth_ble_psd
+from dwarf_python_api.lib.dwarf_utils import read_bluetooth_ble_STA_ssid
+from dwarf_python_api.lib.dwarf_utils import read_bluetooth_ble_STA_pwd
 
 try:
     # py3
@@ -837,61 +842,9 @@ class PhotoPolarAlign(Frame):
         
         Button(win, text='OK', command=self.settings_destroy).pack(pady=4)
 
-    def copy_file_in_current_directory(self, source_filename, destination_filename):
-        """
-        Copies a file from source_filename to destination_filename in the current directory.
-        :param source_filename: The name of the source file to copy.
-        :param destination_filename: The name where the file should be copied to.
-        """
-        try:
-            current_directory = os.getcwd()
-            source_path = os.path.join(current_directory, source_filename)
-            destination_path = os.path.join(current_directory, destination_filename)
-            shutil.copy(source_path, destination_path)
-            print(f"File copied from {source_filename} to {destination_filename}")
-            return True
-        except FileNotFoundError:
-            print(f"Source file {source_filename} not found in the current directory.")
-        except PermissionError:
-            print(f"Permission denied. Unable to copy to {destination_filename}.")
-        except Exception as e:
-            print(f"Error copying file: {e}")
-
-        return False
-
     def force_stop_connect_bluetooth(self):
         # Read the config file and update the UI to Close
-        CONFIG_FILE_TMP = 'config_stop.tmp'
-        LOCK_FILE = 'config.lock'
-
-        lock = FileLock(LOCK_FILE,thread_local=False)  # Lock file with no timeout (wait indefinitely)
-
-        with lock:
-            print("Lock ON")
-            # Create or clear the temp file
-            open(CONFIG_FILE_TMP, 'w').close()
-
-            with open(CONFIG_FILE, 'r') as file:
-                lines = file.readlines()
-        
-            with open(CONFIG_FILE_TMP, 'w') as file:
-                for line in lines:
-                    if line.startswith('DWARF_UI'):
-                        file.write(f'DWARF_UI = "Close"\n')
-                    else:
-                        file.write(line)
-
-            # Copy tmp file
-            nb_try = 0
-            result_copy = self.copy_file_in_current_directory(CONFIG_FILE_TMP, CONFIG_FILE)
-            while nb_try < 3 and not result_copy:
-                result_copy = self.copy_file_in_current_directory(CONFIG_FILE_TMP, CONFIG_FILE)
-                nb_try += 1
-                time.sleep(0.25)
-
-            time.sleep(3)
-
-        print("Lock OFF")
+        update_config_data( "ui", "Close", True, CONFIG_FILE)
 
     def get_file_modification_time(self, file_path):
         return os.path.getmtime(file_path)
@@ -905,7 +858,7 @@ class PhotoPolarAlign(Frame):
         resultUI = False
         twice_blank = 0
         # read at runtime
-        data_config = get_config_data(True)
+        data_config = get_config_data(CONFIG_FILE, True)
         # in case of wifi error restart the process
         if data_config['ip'] != "":
           previous_ip = data_config['ip']
@@ -931,7 +884,7 @@ class PhotoPolarAlign(Frame):
                 lock = FileLock(LOCK_FILE, thread_local=False, timeout=5)
                 with lock:
                     print("Lock On")
-                    data_config = get_config_data()
+                    data_config = get_config_data(CONFIG_FILE)
                     last_check_time = current_mod_time
 
                     current_ip = data_config['ip']
@@ -996,6 +949,9 @@ class PhotoPolarAlign(Frame):
             self.dwarf_status_msg = "Bluetooth Connected"
             self.dwarf_status_msg_process = ""
             self.dwarf_status_msg_info = ""
+            # update client_id
+            if (data_config['update_client_id']):
+                update_client_id_from_last_session( current_ip, CONFIG_FILE)
             self.dwarf_test_connect(2)
 
         elif resultUI:
@@ -1093,7 +1049,7 @@ class PhotoPolarAlign(Frame):
         print("dwarf_connect")
         # read at runtime
         # read at runtime
-        data_config = get_config_data(True)
+        data_config = get_config_data(CONFIG_FILE, True)
         # in case of wifi error restart the process
         current_ip = data_config['ip']
         result_TestConnect = False
@@ -1110,7 +1066,7 @@ class PhotoPolarAlign(Frame):
           if self.dwarf_status_bluetooth:
             result_TestConnect = self.dwarf_test_connect(1, 2)
             if not result_TestConnect:
-                result_TestConnect = self.dwarf_test_connect(1, 2)
+                result_TestConnect = self.dwarf_test_connect(1, 1)
             if not result_TestConnect:
                 # restart Bluetooth
                 current_ip = ""
@@ -1131,6 +1087,7 @@ class PhotoPolarAlign(Frame):
             self.monitor_thread = threading.Thread(target=self.monitor_ip_changes)
             self.monitor_thread.start()
 
+
     def dwarf_move_polar(self):
         print("dwarf_move_polar")
         result = False
@@ -1148,6 +1105,26 @@ class PhotoPolarAlign(Frame):
 
         if result:
             result = self.dwarf_motor_action(3, "Pitch Motor positioning...", "Pitch Motor Position" )
+
+        if result:
+            self.dwarf_status_msg_process = "Polar Align"
+            self.dwarf_status_msg_info = "Success"
+        else:
+            self.dwarf_status_msg_process = "Polar Align"
+            self.dwarf_status_msg_info = "Error"
+
+        dwarf_bar(self, self.dwarf_status_msg, self.dwarf_status_msg_process, self.dwarf_status_msg_info)
+
+        return result
+
+    def dwarf_move_polarD3(self):
+        print("dwarf_move_polarD3")
+        result = False
+
+        if not self.dwarf_status:
+            return result
+
+        result = self.dwarf_motor_action(7, "Pitch Motor positioning D3...", "Pitch Motor Position" )
 
         if result:
             self.dwarf_status_msg_process = "Polar Align"
@@ -1272,8 +1249,8 @@ class PhotoPolarAlign(Frame):
 
             dwarf_bar(self, self.dwarf_status_msg, self.dwarf_status_msg_process, self.dwarf_status_msg_info)
 
-            result = permform_update_camera_setting("exposure", camera_exposure)
-            if result == 0:
+            result = perform_update_camera_setting("exposure", camera_exposure)
+            if result:
                 self.dwarf_status_msg_process = "Set Exposure to " + camera_exposure
                 self.dwarf_status_msg_info = "Success"
                 result = True
@@ -1298,8 +1275,8 @@ class PhotoPolarAlign(Frame):
 
             dwarf_bar(self, self.dwarf_status_msg, self.dwarf_status_msg_process, self.dwarf_status_msg_info)
 
-            result = permform_update_camera_setting("gain", camera_gain)
-            if result == 0:
+            result = perform_update_camera_setting("gain", camera_gain)
+            if result:
                 self.dwarf_status_msg_process = "Set Gain to " + camera_gain
                 self.dwarf_status_msg_info = "Success"
                 result = True
@@ -1324,8 +1301,8 @@ class PhotoPolarAlign(Frame):
 
             dwarf_bar(self, self.dwarf_status_msg, self.dwarf_status_msg_process, self.dwarf_status_msg_info)
 
-            result = permform_update_camera_setting("IR", camera_IR)
-            if result == 0:
+            result = perform_update_camera_setting("IR", camera_IR)
+            if result:
                 self.dwarf_status_msg_process = "Set IR to " + camera_IR
                 self.dwarf_status_msg_info = "Success"
                 result = True
@@ -1413,6 +1390,8 @@ class PhotoPolarAlign(Frame):
         '''
         User wants to quit
         '''
+        perform_disconnect()
+
         # Signal the threads to stop
         print ("Quit programm")
 
@@ -1929,6 +1908,8 @@ class PhotoPolarAlign(Frame):
                                   command=self.dwarf_connect)
         self.dwarfmenu.add_command(label='Polar Move To...',
                                   command=self.dwarf_move_polar)
+        self.dwarfmenu.add_command(label='Polar Correction D3...',
+                                  command=self.dwarf_move_polarD3)
         self.dwarfmenu.add_command(label='Polar Align 0°...',
                                   command=self.dwarf_move_to_0)
         self.dwarfmenu.add_command(label='Polar Align 90°...',
