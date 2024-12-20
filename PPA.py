@@ -18,9 +18,10 @@ from filelock import FileLock
 # import data for config.py
 from dwarf_python_api.lib.dwarf_utils import motor_action, perform_time, perform_timezone, perform_open_camera, read_camera_exposure, read_camera_gain, read_camera_IR, perform_update_camera_setting, perform_takePhoto, save_bluetooth_config_from_ini_file, perform_start_autofocus, perform_stop_autofocus, perform_disconnect
 from dwarf_python_api.lib.ftp_utils import update_client_id_from_last_session
-from dwarf_python_api.get_config_data import get_config_data, update_config_data, CONFIG_FILE
 from dwarf_python_api.get_live_data_dwarf import getGetLastPhoto, read_config
 from dwarf_ble_connect.connect_bluetooth import connect_bluetooth
+
+import dwarf_python_api.get_config_data
 
 from dwarf_python_api.lib.dwarf_utils import read_bluetooth_ble_psd
 from dwarf_python_api.lib.dwarf_utils import read_bluetooth_ble_STA_ssid
@@ -844,7 +845,7 @@ class PhotoPolarAlign(Frame):
 
     def force_stop_connect_bluetooth(self):
         # Read the config file and update the UI to Close
-        update_config_data( "ui", "Close", True, CONFIG_FILE)
+        dwarf_python_api.get_config_data.update_config_data( "ui", "Close", True)
 
     def get_file_modification_time(self, file_path):
         return os.path.getmtime(file_path)
@@ -858,7 +859,7 @@ class PhotoPolarAlign(Frame):
         resultUI = False
         twice_blank = 0
         # read at runtime
-        data_config = get_config_data(CONFIG_FILE, True)
+        data_config = dwarf_python_api.get_config_data.get_config_data(print_log=True)
         # in case of wifi error restart the process
         if data_config['ip'] != "":
           previous_ip = data_config['ip']
@@ -870,21 +871,20 @@ class PhotoPolarAlign(Frame):
         print(f"Starting monitor_ip_changes")
         check_file = True
         last_check_time = None
-        LOCK_FILE = 'config.lock'
 
         # not((resultIP and resultUI) or (not resultIP and resultUI))
         # while (not resultUI):
         while (not self.stop_event.is_set() and not resultIP and not resultUI):
 
             # Reload the config module when changing to ensure the new value is used
-            current_mod_time = self.get_file_modification_time(CONFIG_FILE)
+            current_mod_time = self.get_file_modification_time(dwarf_python_api.get_config_data.CONFIG_FILE)
             check_file = (last_check_time is None or last_check_time!= current_mod_time)
             if check_file :
               try:
-                lock = FileLock(LOCK_FILE, thread_local=False, timeout=5)
+                lock = FileLock(dwarf_python_api.get_config_data.LOCK_FILE, thread_local=False, timeout=5)
                 with lock:
                     print("Lock On")
-                    data_config = get_config_data(CONFIG_FILE)
+                    data_config = dwarf_python_api.get_config_data.get_config_data()
                     last_check_time = current_mod_time
 
                     current_ip = data_config['ip']
@@ -951,7 +951,7 @@ class PhotoPolarAlign(Frame):
             self.dwarf_status_msg_info = ""
             # update client_id
             if (data_config['update_client_id']):
-                update_client_id_from_last_session( current_ip, CONFIG_FILE)
+                update_client_id_from_last_session( current_ip)
             self.dwarf_test_connect(2)
 
         elif resultUI:
@@ -1049,7 +1049,7 @@ class PhotoPolarAlign(Frame):
         print("dwarf_connect")
         # read at runtime
         # read at runtime
-        data_config = get_config_data(CONFIG_FILE, True)
+        data_config = dwarf_python_api.get_config_data.get_config_data(print_log=True)
         # in case of wifi error restart the process
         current_ip = data_config['ip']
         result_TestConnect = False
@@ -1095,36 +1095,24 @@ class PhotoPolarAlign(Frame):
         if not self.dwarf_status:
             return result
 
+        data_config = dwarf_python_api.get_config_data.get_config_data()
+
         result = self.dwarf_motor_action(5, "Rotation Motor Resetting...", "Rotation Motor Reset" )
 
         if result:
             result = self.dwarf_motor_action(6, "Pitch Motor Resetting...", "Pitch Motor Reset" )
 
         if result:
-            result = self.dwarf_motor_action(2, "Rotation Motor positioning...", "Rotation Motor Position" )
+            if data_config['dwarf_id'] == "3":
+                result = self.dwarf_motor_action(9, "Rotation Motor positioning...", "Rotation Motor Position" )
+            else:
+                result = self.dwarf_motor_action(2, "Rotation Motor positioning...", "Rotation Motor Position" )
 
         if result:
-            result = self.dwarf_motor_action(3, "Pitch Motor positioning...", "Pitch Motor Position" )
-
-        if result:
-            self.dwarf_status_msg_process = "Polar Align"
-            self.dwarf_status_msg_info = "Success"
-        else:
-            self.dwarf_status_msg_process = "Polar Align"
-            self.dwarf_status_msg_info = "Error"
-
-        dwarf_bar(self, self.dwarf_status_msg, self.dwarf_status_msg_process, self.dwarf_status_msg_info)
-
-        return result
-
-    def dwarf_move_polarD3(self):
-        print("dwarf_move_polarD3")
-        result = False
-
-        if not self.dwarf_status:
-            return result
-
-        result = self.dwarf_motor_action(7, "Pitch Motor positioning D3...", "Pitch Motor Position" )
+            if data_config['dwarf_id'] == "3":
+                result = self.dwarf_motor_action(7, "Pitch Motor positioning...", "Pitch Motor Position" )
+            else:
+                result = self.dwarf_motor_action(3, "Pitch Motor positioning...", "Pitch Motor Position" )
 
         if result:
             self.dwarf_status_msg_process = "Polar Align"
@@ -1173,7 +1161,11 @@ class PhotoPolarAlign(Frame):
 
         dwarf_bar(self, self.dwarf_status_msg, self.dwarf_status_msg_process, self.dwarf_status_msg_info)
            
-        result = motor_action(2)
+        data_config = dwarf_python_api.get_config_data.get_config_data()
+        if data_config['dwarf_id'] == "3":
+            result = motor_action(9)
+        else:
+            result = motor_action(2)
 
         if result:
             self.dwarf_status_msg_process = "Polar Align Position 0°"
@@ -1196,7 +1188,11 @@ class PhotoPolarAlign(Frame):
 
         dwarf_bar(self, self.dwarf_status_msg, self.dwarf_status_msg_process, self.dwarf_status_msg_info)
            
-        result = motor_action(4)
+        data_config = dwarf_python_api.get_config_data.get_config_data()
+        if data_config['dwarf_id'] == "3":
+            result = motor_action(4,0.5)
+        else:
+            result = motor_action(4)
 
         if result:
             self.dwarf_status_msg_process = "Polar Align Position 90°"
@@ -1571,16 +1567,16 @@ class PhotoPolarAlign(Frame):
         err = the_scale*numpy.sqrt((x1a-x2a)**2 + (y1a-y2a)**2)/60.0
         self.wvar8.configure(text=('%.2f' % err))
         if x2a > x1a:
-            inst = 'Right '
-        else:
             inst = 'Left '
+        else:
+            inst = 'Right '
         ddeg = abs(x2a - x1a)*the_scale/3600.0
         inst = inst + ('%02d:%02d:%02d' % decdeg2dms(ddeg))
         self.wvar9.configure(text=inst)
         if y2a > y1a:
-            inst = inst + ' Down '
-        else:
             inst = inst + ' Up '
+        else:
+            inst = inst + ' Down '
         ddeg = abs(y2a - y1a)*the_scale/3600.0
         inst = inst + ('%02d:%02d:%02d' % decdeg2dms(ddeg))
         self.wvar9.configure(text=inst)
@@ -1908,8 +1904,6 @@ class PhotoPolarAlign(Frame):
                                   command=self.dwarf_connect)
         self.dwarfmenu.add_command(label='Polar Move To...',
                                   command=self.dwarf_move_polar)
-        self.dwarfmenu.add_command(label='Polar Correction D3...',
-                                  command=self.dwarf_move_polarD3)
         self.dwarfmenu.add_command(label='Polar Align 0°...',
                                   command=self.dwarf_move_to_0)
         self.dwarfmenu.add_command(label='Polar Align 90°...',
@@ -2045,7 +2039,7 @@ class PhotoPolarAlign(Frame):
         self.wvar9 = nxt
         # #################################################################
         nxt = LabelFrame(master, borderwidth=2, relief='ridge',
-                         text='Dwarf II Status')
+                         text='Dwarf Status')
         nxt.pack(side='top', fill='x')
         self.wfdwco = nxt
         nxt = Label(self.wfdwco, anchor='w', text=self.dwarf_status_msg)
