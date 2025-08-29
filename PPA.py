@@ -21,7 +21,11 @@ from dwarf_python_api.lib.ftp_utils import update_client_id_from_last_session
 from dwarf_python_api.get_live_data_dwarf import getGetLastPhoto, read_config
 from dwarf_ble_connect.connect_bluetooth import connect_bluetooth
 
+# import data for config.py
 import dwarf_python_api.get_config_data
+# The config value for dwarf_id is offset by -1 (stored as one less than the actual ID).
+# the value return by get_config_data must be used with these functions
+from dwarf_python_api.get_config_data import config_to_dwarf_id_int, config_to_dwarf_id_str
 
 from dwarf_python_api.lib.dwarf_utils import read_bluetooth_ble_psd
 from dwarf_python_api.lib.dwarf_utils import read_bluetooth_ble_STA_ssid
@@ -1103,13 +1107,13 @@ class PhotoPolarAlign(Frame):
             result = self.dwarf_motor_action(6, "Pitch Motor Resetting...", "Pitch Motor Reset" )
 
         if result:
-            if data_config['dwarf_id'] == "3":
+            if config_to_dwarf_id_str(data_config['dwarf_id']) == "3":
                 result = self.dwarf_motor_action(9, "Rotation Motor positioning...", "Rotation Motor Position" )
             else:
                 result = self.dwarf_motor_action(2, "Rotation Motor positioning...", "Rotation Motor Position" )
 
         if result:
-            if data_config['dwarf_id'] == "3":
+            if config_to_dwarf_id_str(data_config['dwarf_id']) == "3":
                 result = self.dwarf_motor_action(7, "Pitch Motor positioning...", "Pitch Motor Position" )
             else:
                 result = self.dwarf_motor_action(3, "Pitch Motor positioning...", "Pitch Motor Position" )
@@ -1162,7 +1166,7 @@ class PhotoPolarAlign(Frame):
         dwarf_bar(self, self.dwarf_status_msg, self.dwarf_status_msg_process, self.dwarf_status_msg_info)
            
         data_config = dwarf_python_api.get_config_data.get_config_data()
-        if data_config['dwarf_id'] == "3":
+        if config_to_dwarf_id_str(data_config['dwarf_id']) == "3":
             result = motor_action(9)
         else:
             result = motor_action(2)
@@ -1189,7 +1193,7 @@ class PhotoPolarAlign(Frame):
         dwarf_bar(self, self.dwarf_status_msg, self.dwarf_status_msg_process, self.dwarf_status_msg_info)
            
         data_config = dwarf_python_api.get_config_data.get_config_data()
-        if data_config['dwarf_id'] == "3":
+        if config_to_dwarf_id_str(data_config['dwarf_id']) == "3":
             result = motor_action(4,0.5)
         else:
             result = motor_action(4)
@@ -1236,6 +1240,7 @@ class PhotoPolarAlign(Frame):
             result = False
             return result
 
+        data_config = dwarf_python_api.get_config_data.get_config_data()
         result = self.dwarf_open_telephoto()
 
         if result and (camera_exposure := read_camera_exposure()):
@@ -1245,7 +1250,7 @@ class PhotoPolarAlign(Frame):
 
             dwarf_bar(self, self.dwarf_status_msg, self.dwarf_status_msg_process, self.dwarf_status_msg_info)
 
-            result = perform_update_camera_setting("exposure", camera_exposure)
+            result = perform_update_camera_setting("exposure", camera_exposure, config_to_dwarf_id_str(data_config['dwarf_id']))
             if result:
                 self.dwarf_status_msg_process = "Set Exposure to " + camera_exposure
                 self.dwarf_status_msg_info = "Success"
@@ -1271,7 +1276,7 @@ class PhotoPolarAlign(Frame):
 
             dwarf_bar(self, self.dwarf_status_msg, self.dwarf_status_msg_process, self.dwarf_status_msg_info)
 
-            result = perform_update_camera_setting("gain", camera_gain)
+            result = perform_update_camera_setting("gain", camera_gain, config_to_dwarf_id_str(data_config['dwarf_id']))
             if result:
                 self.dwarf_status_msg_process = "Set Gain to " + camera_gain
                 self.dwarf_status_msg_info = "Success"
@@ -1444,7 +1449,7 @@ class PhotoPolarAlign(Frame):
                 self.dwarf_status_msg_info = ""
                 dwarf_bar(self, self.dwarf_status_msg, self.dwarf_status_msg_process, self.dwarf_status_msg_info)
 
-                img = getGetLastPhoto(0, True)
+                img = getGetLastPhoto(0, "TELE", True)
 
                 if (img):
                     print ("Image Saved: ", img) 
